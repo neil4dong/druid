@@ -1,5 +1,5 @@
 /*
- * Copyright 1999-2017 Alibaba Group Holding Ltd.
+ * Copyright 1999-2018 Alibaba Group Holding Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.alibaba.druid.sql.dialect.hive.parser;
 
+import com.alibaba.druid.sql.ast.SQLExpr;
 import com.alibaba.druid.sql.ast.SQLName;
 import com.alibaba.druid.sql.ast.statement.*;
 import com.alibaba.druid.sql.dialect.hive.stmt.HiveCreateTableStatement;
@@ -120,6 +121,94 @@ public class HiveCreateTableParser extends SQLCreateTableParser {
             }
         }
 
+        if (lexer.token() == Token.COMMENT) {
+            lexer.nextToken();
+            SQLExpr comment = this.exprParser.expr();
+            stmt.setComment(comment);
+        }
+
+        if (lexer.token() == Token.PARTITIONED) {
+            lexer.nextToken();
+            accept(Token.BY);
+            accept(Token.LPAREN);
+
+            for (;;) {
+                if (lexer.token() != Token.IDENTIFIER) {
+                    throw new ParserException("expect identifier. " + lexer.info());
+                }
+
+                SQLColumnDefinition column = this.exprParser.parseColumn();
+                stmt.addPartitionColumn(column);
+
+                if (lexer.isKeepComments() && lexer.hasComment()) {
+                    column.addAfterComment(lexer.readAndResetComments());
+                }
+
+                if (lexer.token() != Token.COMMA) {
+                    break;
+                } else {
+                    lexer.nextToken();
+                    if (lexer.isKeepComments() && lexer.hasComment()) {
+                        column.addAfterComment(lexer.readAndResetComments());
+                    }
+                }
+            }
+
+            accept(Token.RPAREN);
+        }
+
+        if (lexer.identifierEquals(FnvHash.Constants.CLUSTERED)) {
+            lexer.nextToken();
+            accept(Token.BY);
+            accept(Token.LPAREN);
+            this.exprParser.names(stmt.getClusteredBy());
+            accept(Token.RPAREN);
+        }
+
+        if (lexer.token() == Token.ROW) {
+            lexer.nextToken();
+            acceptIdentifier("FORMAT");
+
+            if (lexer.identifierEquals(FnvHash.Constants.DELIMITED)) {
+                lexer.nextToken();
+                acceptIdentifier("FIELDS");
+                acceptIdentifier("TERMINATED");
+                accept(Token.BY);
+                SQLExternalRecordFormat format = new SQLExternalRecordFormat();
+                format.setTerminatedBy(this.exprParser.expr());
+                stmt.setRowFormat(format);
+            } else {
+                throw new ParserException("TODO " + lexer.info());
+            }
+        }
+
+        if (lexer.identifierEquals(FnvHash.Constants.SORTED)) {
+            lexer.nextToken();
+            accept(Token.BY);
+            accept(Token.LPAREN);
+            for (; ; ) {
+                SQLSelectOrderByItem item = this.exprParser.parseSelectOrderByItem();
+                stmt.addSortedByItem(item);
+                if (lexer.token() == Token.COMMA) {
+                    lexer.nextToken();
+                    continue;
+                }
+                break;
+            }
+            accept(Token.RPAREN);
+        }
+
+        if (stmt.getClusteredBy().size() > 0 || stmt.getSortedBy().size() > 0) {
+            accept(Token.INTO);
+            if (lexer.token() == Token.LITERAL_INT) {
+                stmt.setBuckets(lexer.integerValue().intValue());
+                lexer.nextToken();
+            } else {
+                throw new ParserException("into buckets must be integer. " + lexer.info());
+            }
+            acceptIdentifier("BUCKETS");
+        }
+
         if (lexer.identifierEquals(FnvHash.Constants.STORED)) {
             lexer.nextToken();
             accept(Token.AS);
@@ -127,12 +216,31 @@ public class HiveCreateTableParser extends SQLCreateTableParser {
             stmt.setStoredAs(name);
         }
 
+        if (lexer.identifierEquals(FnvHash.Constants.TBLPROPERTIES)) {
+            lexer.nextToken();
+            accept(Token.LPAREN);
+
+            for (;;) {
+                String name = lexer.stringVal();
+                lexer.nextToken();
+                accept(Token.EQ);
+                SQLExpr value = this.exprParser.primary();
+                stmt.getTableOptions().put(name, value);
+                if (lexer.token() == Token.COMMA) {
+                    lexer.nextToken();
+                    continue;
+                }
+                break;
+            }
+
+            accept(Token.RPAREN);
+        }
+
         if (lexer.token() == Token.AS) {
             lexer.nextToken();
             SQLSelect select = this.createSQLSelectParser().select();
             stmt.setSelect(select);
         }
-
         return stmt;
     }
 
