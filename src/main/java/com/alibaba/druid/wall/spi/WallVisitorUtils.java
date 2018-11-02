@@ -213,6 +213,12 @@ public class WallVisitorUtils {
         }
 
         SQLExpr where = x.getWhere();
+
+        if(where == null && visitor.getConfig().isSelectWhereNoneCheck() && !isParentsTableSource(x)){
+            checkSelectWhere(visitor, x);
+        }
+
+
         if (where != null) {
             checkCondition(visitor, x.getWhere());
 
@@ -228,6 +234,51 @@ public class WallVisitorUtils {
         }
         checkSelectForMultiTenant(visitor, x);
         // checkConditionForMultiTenant(visitor, x.getWhere(), x);
+    }
+
+    /*
+        top-down check select or each select of union whether has where-condition
+     */
+    private static void checkSelectWhere(WallVisitor visitor, SQLSelectQueryBlock x) {
+        if (x.getWhere() != null) {
+            return;
+        }
+
+        if (x.getParent() instanceof SQLUnionQuery || x.getParent() instanceof SQLSelect) {
+            SQLTableSource tableSource = x.getFrom();
+
+            if(tableSource != null) {
+                if (tableSource instanceof SQLSubqueryTableSource) {
+                    SQLSelectQuery query = ((SQLSubqueryTableSource) tableSource).getSelect().getQuery();
+                    List<SQLSelectQueryBlock> selectQueryBlocks = splitSQLSelectQuery(query);
+                    for (SQLSelectQueryBlock selectQueryBlock : selectQueryBlocks) {
+                        checkSelectWhere(visitor, selectQueryBlock);
+                    }
+                }else if(tableSource instanceof SQLUnionQueryTableSource){
+                    SQLUnionQuery query = ((SQLUnionQueryTableSource) tableSource).getUnion();
+                    List<SQLSelectQueryBlock> selectQueryBlocks = splitSQLSelectQuery(query);
+                    for (SQLSelectQueryBlock selectQueryBlock : selectQueryBlocks) {
+                        checkSelectWhere(visitor, selectQueryBlock);
+                    }
+                }else{
+                    addViolation(visitor, ErrorCode.SELECT_NOT_ALLOW, "select none condition not allow", x);
+                }
+            }
+        }
+    }
+
+
+    private static boolean isParentsTableSource(SQLSelectQueryBlock x) {
+        SQLObject p = x;
+        do {
+            p = p.getParent();
+            if(p instanceof SQLTableSource){
+                return true;
+            }
+        }
+        while (!(p instanceof SQLSelectStatement));
+
+        return false;
     }
 
     public static void checkHaving(WallVisitor visitor, SQLExpr x) {

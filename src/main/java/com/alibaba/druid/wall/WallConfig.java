@@ -54,6 +54,7 @@ public class WallConfig implements WallConfigMBean {
     private boolean             conditionLikeTrueAllow      = true;
 
     private boolean             selectAllColumnAllow        = true;
+    private boolean             selectWhereNoneCheck        = false;
 
     private boolean             deleteAllow                 = true;
     private boolean             deleteWhereAlwayTrueCheck   = true;
@@ -270,6 +271,14 @@ public class WallConfig implements WallConfigMBean {
 
     public void setSelectAllColumnAllow(boolean selectAllColumnAllow) {
         this.selectAllColumnAllow = selectAllColumnAllow;
+    }
+
+    public boolean isSelectWhereNoneCheck() {
+        return selectWhereNoneCheck;
+    }
+
+    public void setSelectWhereNoneCheck(boolean selectWhereNoneCheck) {
+        this.selectWhereNoneCheck = selectWhereNoneCheck;
     }
 
     public boolean isInited() {
